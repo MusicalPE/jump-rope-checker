@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>줄넘기 판정기 v0.3 · 카메라로 진짜 뛰는지 보기</title>
+<style>
+  :root{
+    --ground:#000; --panel:#14161C; --panel2:#1B1E26; --line:#2C3140; --ink:#F2F3F7; --muted:#9097A8;
+    --yellow:#FFD21F; --green:#2FC653; --blue:#4C88FF; --red:#F2392F; --orange:#FF7A1A;
+    --display:"Black Han Sans","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    --ui:"IBM Plex Sans KR","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  html,body{height:100%;margin:0}
+  body{background:var(--ground);color:var(--ink);font-family:var(--ui);overflow:hidden;-webkit-user-select:none;user-select:none}
+  button{font:inherit;cursor:pointer;border:0;border-radius:12px;padding:10px 16px;font-weight:800;color:var(--ink);background:var(--panel2)}
+  button.primary{background:var(--ink);color:var(--ground)}
+  button.warn{background:var(--red)}
+  button:disabled{opacity:.4;cursor:default}
+  input[type=number]{font:inherit;font-weight:800;font-size:22px;width:120px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);text-align:center}
+  input[type=range]{width:160px;accent-color:var(--yellow)}
+  .screen{position:fixed;inset:0;display:flex;flex-direction:column;padding:max(14px,env(safe-area-inset-top)) 16px max(14px,env(safe-area-inset-bottom))}
+  header{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{font-family:var(--display);font-weight:400;font-size:clamp(20px,3.2vh,32px);margin:0;letter-spacing:-.01em}
+  header .sub{color:var(--muted);font-size:13px}
+  header .spacer{flex:1}
+  main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.4vh;min-height:0;position:relative}
+  .count{font-family:var(--display);font-size:clamp(90px,30vh,320px);line-height:.95;letter-spacing:-.02em;transition:color .15s}
+  .count small{font-size:.22em;color:var(--muted);font-family:var(--ui);font-weight:800;margin-left:.2em}
+  .status{font-family:var(--display);font-size:clamp(22px,5vh,56px);line-height:1.1;text-align:center;min-height:1.2em;transition:color .2s;max-width:64vw;text-wrap:balance}
+  .status.jump{color:var(--green)} .status.hand{color:var(--orange)} .status.wait{color:var(--muted)} .status.idle{color:var(--muted)}
+  .meter{width:min(70vw,560px);height:1.6vh;background:var(--panel2);border-radius:99px;position:relative;overflow:hidden}
+  .meter i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--yellow);border-radius:99px;transition:width .06s}
+  .meter b{position:absolute;top:-2px;bottom:-2px;width:3px;background:var(--ink);opacity:.7}
+  .meter-l{font-size:12.5px;color:var(--muted);display:flex;gap:16px}
+  .compare{display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:center;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:10px 16px;font-weight:700}
+  .compare .diff{font-family:var(--display);font-size:24px}
+  .compare .diff.ok{color:var(--green)} .compare .diff.bad{color:var(--red)}
+  .stats{display:flex;gap:18px;color:var(--muted);font-size:14px;flex-wrap:wrap;justify-content:center}
+  .stats b{color:var(--ink);font-size:18px}
+  footer{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;padding-top:8px}
+  footer label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);font-weight:700}
+  /* 오른쪽 아래 내 모습 */
+  .pip{position:fixed;right:16px;bottom:max(14px,env(safe-area-inset-bottom));width:min(34vw,300px);aspect-ratio:3/4;border-radius:16px;overflow:hidden;background:var(--panel);border:2px solid var(--line);box-shadow:0 10px 40px rgba(0,0,0,.6);cursor:pointer;transition:width .2s}
+  .pip.big{width:min(80vw,64vh*0.75);right:50%;transform:translateX(50%);bottom:12vh}
+  .pip video,.pip canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+  .pip .tag{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.55);border-radius:99px;padding:3px 10px;font-size:12px;font-weight:800}
+  .pip .fps{position:absolute;right:8px;top:8px;background:rgba(0,0,0,.55);border-radius:99px;padding:3px 10px;font-size:12px;color:var(--muted)}
+  .pip .nocam{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);padding:16px;font-size:14px;line-height:1.5}
+  /* 시작 화면 */
+  .cover{position:fixed;inset:0;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;text-align:center;z-index:10}
+  .cover h2{font-family:var(--display);font-weight:400;font-size:clamp(28px,6vh,64px);margin:0}
+  .cover p{max-width:640px;color:var(--muted);line-height:1.6;margin:0;font-size:15px}
+  .cover ol{text-align:left;max-width:560px;color:var(--ink);line-height:1.7;margin:0;padding-left:1.3em;font-size:15px}
+  .cover .err{color:var(--red);font-weight:700;max-width:640px}
+  .cover.hide{display:none}
+  .flash{animation:flash .25s}
+  @keyframes flash{0%{transform:scale(1.12)}100%{transform:scale(1)}}
+  .log{position:fixed;left:16px;bottom:max(14px,env(safe-area-inset-bottom));font-size:12px;color:var(--muted);max-width:40vw;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="screen">
+  <header>
+    <h1>줄넘기 판정기 <span class="sub">v0.3 시제품</span></h1>
+    <span class="sub">엉덩이와 머리가 같이 뜨고 팔이 돌아갈 때만 1회 · 앉아서 팔만 돌리거나 줄 없이 콩콩 뛰면 세지 않아요</span>
+    <div class="spacer"></div>
+    <button id="btnBig" title="내 모습 크게/작게">내 모습 크게</button>
+    <button id="btnFlip" title="앞/뒤 카메라">카메라 전환</button>
+  </header>
+  <main>
+    <div class="count" id="count">0<small>회</small></div>
+    <div class="status idle" id="status">시작을 누르고 카메라 앞에 서요</div>
+    <div class="meter"><i id="meter"></i><b id="meterLine"></b></div>
+    <div class="meter-l"><span>몸(엉덩이)이 뜬 높이</span><span>│ 선을 넘었다 내려오면 1회</span></div>
+    <div class="compare">
+      <span>전자 줄넘기 화면 숫자</span><input type="number" id="devCount" min="0" placeholder="0">
+      <span class="diff" id="diff">—</span>
+    </div>
+    <div class="stats"><span>시간 <b id="time">0:00</b></span><span>분당 <b id="rate">0</b>회</span><span>손만 돌린 시간 <b id="handSec">0</b>초</span><span>최고 연속 <b id="streak">0</b>회</span><span title="몸은 떴지만 팔이 안 돌아간 경우">줄 안 돌리고 뛴 <b id="norope">0</b>회</span><span title="머리나 엉덩이 한쪽만 움직인 경우">몸 일부만 <b id="rej">0</b>회</span></div>
+  </main>
+  <footer>
+    <button class="primary" id="btnStart">시작</button>
+    <button id="btnReset">처음부터</button>
+    <label>민감도 <input type="range" id="sens" min="6" max="16" value="10"> <span id="sensV">보통</span></label>
+    <label>소리 <input type="checkbox" id="snd" checked></label>
+  </footer>
+</div>
+<div class="pip" id="pip">
+  <video id="video" playsinline muted autoplay></video>
+  <canvas id="overlay"></canvas>
+  <span class="tag">내 모습</span><span class="fps" id="fps"></span>
+  <div class="nocam" id="nocam">카메라를 켜면 여기에 내 모습이 나와요</div>
+</div>
+<div class="log" id="log"></div>
+
+<div class="cover" id="cover">
+  <h2>줄넘기 판정기</h2>
+  <p>태블릿·노트북 카메라로 관절 움직임을 읽어 <b style="color:var(--ink)">몸이 실제로 뛴 횟수</b>를 셉니다. 전자 줄넘기 숫자와 나란히 놓고 비교해 보세요. 모든 처리는 이 기기 안에서만 되고, 영상은 어디에도 저장·전송되지 않아요.</p>
+  <ol>
+    <li>기기를 세워 두고 <b>2~3m</b> 떨어져서 <b>머리부터 엉덩이까지</b>는 꼭 화면에 들어오게 서요(엉덩이가 안 보이면 머리로만 세서 덜 정확해요). 옆 친구는 화면 밖으로.</li>
+    <li>처음 1초 정도 가만히 서 있으면 기준 높이를 잡아요.</li>
+    <li><b>엉덩이와 머리가 같이 뜨고, 팔이 돌아갈 때</b>만 1회예요. 앉아서 팔만 돌리면 <b style="color:var(--orange)">"팔만 돌리고 있어요"</b>, 줄 없이 콩콩만 뛰면 <b style="color:var(--orange)">"줄을 돌리지 않았어요"</b>가 뜨고 세지 않아요.</li>
+  </ol>
+  <p style="font-size:13px">처음 열 때는 인터넷이 필요해요(관절 인식 모델 약 6MB를 받아요). 한 번 받은 뒤에는 브라우저가 기억해요.</p>
+  <div class="err" id="coverErr"></div>
+  <button class="primary" id="btnCam" style="font-size:20px;padding:14px 28px">카메라 켜고 시작하기</button>
+</div>
+
+<script>
+/* ===================== 점프 판정기 (카메라·모델과 무관한 순수 계산 — 시험할 수 있게 따로 둠) =====================
+   landmarks: MediaPipe Pose 33개 (x,y 는 화면 비율 0~1, y 는 아래로 갈수록 큼, visibility 0~1)
+   원리: 엉덩이(23·24) 높이를 몸통 길이(어깨~엉덩이)로 나눠 "몸통 몇 배" 단위로 만든 뒤, 가만히 있을 때의 기준선보다
+         일정 높이 이상 올라갔다 내려오면 1회. 손목(15·16)이 빠르게 도는데 몸은 안 뜨면 "손만 돌림". */
+function JumpDetector(opt){
+  opt=opt||{};
+  this.minAmp=opt.minAmp||0.10;      // 몸통 길이의 몇 배 이상 떠야 1회 (민감도, 0.10 ≈ 4~5cm)
+  this.minGap=opt.minGap||0.18;      // 회와 회 사이 최소 시간(초)
+  this.reset();
+}
+JumpDetector.prototype.reset=function(){
+  this.count=0; this.air=false; this.airT=0; this.lastJump=-9; this.lift=0; this.hipLift=0; this.hipPeak=0; this.headPeak=0; this.hipSeen=false;
+  this.head={s:null,base:null}; this.hip={s:null,base:null}; this.scale=null; this.n=0;
+  this.handSpeed=0; this.prevW=null; this.prevT=null; this.hand=false; this.handSec=0; this.lastArmT=-9;
+  this.streak=0; this.best=0; this.visible=false; this.rateBuf=[]; this.noRope=0; this.partial=0; this.why='';
+};
+// 한 채널(머리·엉덩이)의 높이를 부드럽게 하고 기준선(땅에 있을 때 높이) 대비 얼마나 떴는지
+JumpDetector.prototype.track=function(ch, y){
+  ch.s=ch.s===null?y:ch.s+(y-ch.s)*0.8;
+  if(ch.base===null) ch.base=ch.s;
+  if(ch.s>ch.base) ch.base+=(ch.s-ch.base)*0.35; else ch.base+=(ch.s-ch.base)*0.006;
+  return ch.base-ch.s;
+};
+JumpDetector.prototype.push=function(t, lm){
+  const v=i=>lm[i]&&(lm[i].visibility===undefined||lm[i].visibility>0.35);
+  const headOk=v(0)||(v(7)&&v(8)), shOk=v(11)&&v(12), hipOk=v(23)&&v(24);
+  if(!(headOk&&shOk)){ this.visible=false; this.prevW=null; this.prevT=t; return this.state(); }
+  this.visible=true; this.hipSeen=hipOk; this.n++;
+  const sh={x:(lm[11].x+lm[12].x)/2,y:(lm[11].y+lm[12].y)/2};
+  // 크기 기준: 몸통(어깨~엉덩이) 길이. 팔을 돌리면 어깨가 들썩여 값이 흔들리므로 천천히 평균 낸 값을 씀
+  let raw;
+  if(hipOk){ const hip={x:(lm[23].x+lm[24].x)/2,y:(lm[23].y+lm[24].y)/2}; raw=Math.hypot(sh.x-hip.x,sh.y-hip.y); }
+  else raw=Math.hypot(lm[11].x-lm[12].x,lm[11].y-lm[12].y)*1.6;
+  raw=Math.max(0.02,raw);
+  this.scale=this.scale===null?raw:this.scale+(raw-this.scale)*(this.n<30?0.2:0.02);
+  const scale=this.scale;
+  const headY=(v(0)?lm[0].y:(lm[7].y+lm[8].y)/2)/scale;
+  const dt=this.prevT===null?0.033:Math.max(0.001,Math.min(0.2,t-this.prevT));
+  const headLift=this.track(this.head, headY);
+  const hipLift=hipOk?this.track(this.hip,(lm[23].y+lm[24].y)/2/scale):0;
+  // 주 신호: 엉덩이(앉거나 팔만 돌리면 안 뜸). 엉덩이가 안 보일 때만 머리로 대신하되 문턱을 높임
+  const lift=hipOk?hipLift:headLift, amp=hipOk?this.minAmp:this.minAmp*1.4;
+  this.lift=lift; this.hipLift=hipLift;
+  // 손목 속도 (어깨 기준 상대 위치, 몸통 길이/초) — 줄을 돌리고 있는지
+  if(v(15)&&v(16)){
+    const w={x:((lm[15].x+lm[16].x)/2-sh.x)/scale,y:((lm[15].y+lm[16].y)/2-sh.y)/scale};
+    if(this.prevW){ const sp=Math.hypot(w.x-this.prevW.x,w.y-this.prevW.y)/dt; this.handSpeed+=(sp-this.handSpeed)*0.3; }
+    this.prevW=w;
+  } else { this.prevW=null; this.handSpeed*=0.9; }
+  if(this.handSpeed>0.8) this.lastArmT=t;
+  const armOn=(t-this.lastArmT)<0.7;
+  if(!this.air){ if(lift>amp){ this.air=true; this.airT=t; this.hipPeak=hipLift; this.headPeak=headLift; } }
+  else { this.hipPeak=Math.max(this.hipPeak,hipLift); this.headPeak=Math.max(this.headPeak,headLift);
+    if(lift<amp*0.5){ this.air=false;
+      const airTime=t-this.airT;
+      // 진짜 줄넘기 = 엉덩이도 머리도 같이 떴고(몸 전체) + 팔이 돌고 있고 + 떠 있던 시간이 점프답게 짧음
+      const bodyOk=hipOk ? (this.hipPeak>amp && this.headPeak>amp*0.6) : this.headPeak>amp;
+      const timeOk=airTime>=0.06 && airTime<=0.9;
+      if(t-this.lastJump>this.minGap && timeOk){
+        if(bodyOk && armOn){ this.count++; this.lastJump=t; this.streak++; this.best=Math.max(this.best,this.streak); this.rateBuf.push(t); this.why=''; }
+        else if(bodyOk && !armOn){ this.noRope++; this.why='norope'; }
+        else { this.partial++; this.why='partial'; } } } }
+  if(t-this.lastJump>2.5 && this.streak) this.streak=0;
+  this.rateBuf=this.rateBuf.filter(x=>t-x<=10);
+  // 손만 돌림: 손목은 빠른데 몸이 1.2초 넘게 안 뜸
+  this.hand=this.handSpeed>1.2 && (t-this.lastJump)>1.2 && !this.air;
+  if(this.hand){ this.handSec+=dt; }
+  this.prevT=t;
+  return this.state();
+};
+JumpDetector.prototype.state=function(){
+  return { count:this.count, air:this.air, lift:this.lift, hipLift:this.hipLift, hand:this.hand, handSec:this.handSec, visible:this.visible, hipSeen:this.hipSeen,
+           streak:this.streak, best:this.best, rate:this.rateBuf.length*6, noRope:this.noRope, partial:this.partial, why:this.why, lastJump:this.lastJump, amp:this.hipSeen?this.minAmp:this.minAmp*1.4 };
+};
+if(typeof module!=='undefined') module.exports={JumpDetector};
+</script>
+
+<script type="module">
+const $=id=>document.getElementById(id);
+const video=$('video'), cv=$('overlay'), cx=cv.getContext('2d');
+let landmarker=null, stream=null, facing='user', running=false, t0=0, raf=0, lastVideoT=-1, frames=0, fpsT=0;
+const det=new JumpDetector({minAmp:0.10});
+let ac=null;
+function beep(f,d,vol){ if(!$('snd').checked) return; try{ ac=ac||new (window.AudioContext||window.webkitAudioContext)(); const o=ac.createOscillator(), g=ac.createGain(); o.type='triangle'; o.frequency.value=f; g.gain.setValueAtTime(vol||0.2,ac.currentTime); g.gain.exponentialRampToValueAtTime(0.0001,ac.currentTime+d); o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime+d); }catch(e){} }
+function log(s){ $('log').textContent=s; }
+
+/* ---------- 모델 ---------- */
+const CDN='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+async function loadModel(){
+  $('coverErr').textContent=''; $('btnCam').disabled=true; $('btnCam').textContent='관절 인식 모델 받는 중…';
+  const mod=await import(CDN+'/vision_bundle.mjs');
+  const vision=await mod.FilesetResolver.forVisionTasks(CDN+'/wasm');
+  let lm;
+  try{ lm=await mod.PoseLandmarker.createFromOptions(vision,{ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', delegate:'GPU' }, runningMode:'VIDEO', numPoses:1 }); }
+  catch(e){ lm=await mod.PoseLandmarker.createFromOptions(vision,{ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', delegate:'CPU' }, runningMode:'VIDEO', numPoses:1 }); }
+  landmarker=lm; window.__pose=mod;
+}
+/* ---------- 카메라 ---------- */
+async function openCam(){
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  stream=await navigator.mediaDevices.getUserMedia({ video:{ facingMode:facing, width:{ideal:640}, height:{ideal:480}, frameRate:{ideal:30} }, audio:false });
+  video.srcObject=stream; await video.play();
+  $('nocam').hidden=true; $('pip').classList.toggle('mirror',facing==='user');
+  document.querySelectorAll('.pip video,.pip canvas').forEach(el=>el.style.transform=facing==='user'?'scaleX(-1)':'none');
+}
+/* ---------- 뼈대 그리기 ---------- */
+const BONES=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
+function draw(lm, st){
+  if(cv.width!==video.videoWidth||cv.height!==video.videoHeight){ cv.width=video.videoWidth||640; cv.height=video.videoHeight||480; }
+  cx.clearRect(0,0,cv.width,cv.height);
+  if(!lm) return;
+  const P=i=>[lm[i].x*cv.width, lm[i].y*cv.height];
+  cx.lineWidth=Math.max(3,cv.width/160); cx.lineCap='round';
+  cx.strokeStyle=st.air?'#2FC653':st.hand?'#FF7A1A':'#FFD21F';
+  BONES.forEach(([a,b])=>{ if((lm[a].visibility??1)<0.35||(lm[b].visibility??1)<0.35) return; cx.beginPath(); cx.moveTo(...P(a)); cx.lineTo(...P(b)); cx.stroke(); });
+  cx.fillStyle='#fff';
+  [11,12,15,16,23,24,27,28].forEach(i=>{ if((lm[i].visibility??1)<0.35) return; const [x,y]=P(i); cx.beginPath(); cx.arc(x,y,Math.max(4,cv.width/110),0,Math.PI*2); cx.fill(); });
+  if((lm[0].visibility??1)>=0.35){ const [x,y]=P(0); cx.strokeStyle=st.air?'#2FC653':'#FFD21F'; cx.lineWidth=Math.max(3,cv.width/120); cx.beginPath(); cx.arc(x,y,Math.max(10,cv.width/28),0,Math.PI*2); cx.stroke(); }
+}
+/* ---------- 루프 ---------- */
+let lastCount=0, lastAir=false;
+function loop(){
+  raf=requestAnimationFrame(loop);
+  if(!landmarker||video.readyState<2) return;
+  const now=performance.now();
+  if(video.currentTime===lastVideoT) return; lastVideoT=video.currentTime;
+  const res=landmarker.detectForVideo(video, now);
+  const lm=res.landmarks&&res.landmarks[0];
+  const t=(now-t0)/1000;
+  let st;
+  if(running){ st=lm?det.push(t,lm):det.state(); if(!lm) det.visible=false; }
+  else st=det.state();
+  draw(lm, st);
+  frames++; if(now-fpsT>1000){ $('fps').textContent=frames+' fps'; frames=0; fpsT=now; }
+  if(running) paint(st, t, !!lm);
+}
+function paint(st,t,seen){
+  if(st.count!==lastCount){ lastCount=st.count; $('count').innerHTML=st.count+'<small>회</small>'; $('count').classList.remove('flash'); void $('count').offsetWidth; $('count').classList.add('flash'); beep(880,0.08,0.15); }
+  if(st.air&&!lastAir){ $('count').style.color='var(--green)'; } else if(!st.air&&lastAir){ $('count').style.color=''; } lastAir=st.air;
+  const s=$('status');
+  if(!seen||!st.visible){ s.textContent='머리와 어깨가 보이게 서 주세요'; s.className='status wait'; }
+  else if(st.hand){ s.textContent='팔만 돌리고 있어요! 몸도 같이 뛰어요'; s.className='status hand'; }
+  else if(st.why==='norope'&&t-det.airT<1.5){ s.textContent='줄을 돌리지 않았어요! 팔도 같이 돌려요'; s.className='status hand'; }
+  else if(st.hipSeen===false&&st.count===0&&t>3&&!st.air){ s.textContent='엉덩이까지 보이게 조금 물러서요'; s.className='status wait'; }
+  else if(st.air||t-det.lastJump<0.6){ s.textContent='뛰고 있어요!'; s.className='status jump'; }
+  else if(st.count===0){ s.textContent='준비됐어요 — 뛰어 봐요!'; s.className='status idle'; }
+  else { s.textContent='멈췄어요'; s.className='status idle'; }
+  const amp=st.amp, w=Math.max(0,Math.min(1,(st.lift+amp*0.5)/(amp*3)));
+  $('meter').style.width=(w*100).toFixed(1)+'%'; $('meterLine').style.left=((amp*1.5)/(amp*3)*100).toFixed(1)+'%';
+  const m=Math.floor(t/60), sec=Math.floor(t%60); $('time').textContent=m+':'+String(sec).padStart(2,'0');
+  $('rate').textContent=st.rate; $('handSec').textContent=Math.round(st.handSec); $('streak').textContent=st.best; $('rej').textContent=st.partial; $('norope').textContent=st.noRope;
+  diff();
+}
+function diff(){
+  const d=$('devCount').value===''?null:+$('devCount').value, el=$('diff');
+  if(d===null){ el.textContent='—'; el.className='diff'; return; }
+  const gap=d-det.count;
+  el.textContent=gap===0?'딱 맞아요!':gap>0?'기계가 '+gap+'회 더 셌어요':'판정기가 '+(-gap)+'회 더 셌어요';
+  el.className='diff '+(Math.abs(gap)<=Math.max(2,d*0.1)?'ok':'bad');
+}
+/* ---------- 버튼 ---------- */
+$('btnCam').onclick=async()=>{
+  try{ await loadModel(); $('btnCam').textContent='카메라 켜는 중…'; await openCam(); $('cover').classList.add('hide'); t0=performance.now(); loop(); }
+  catch(e){ console.error(e); $('coverErr').textContent='시작하지 못했어요: '+(e.message||e)+(location.protocol==='file:'?' — 파일로 열었을 때 카메라가 막히면 크롬에서 열거나, 인터넷에 올린 주소로 열어 보세요.':''); $('btnCam').disabled=false; $('btnCam').textContent='다시 시도'; }
+};
+$('btnStart').onclick=()=>{ running=!running; if(running){ t0=performance.now(); det.reset(); lastCount=0; $('count').innerHTML='0<small>회</small>'; beep(660,0.1,0.2); } else { beep(440,0.15,0.2); $('status').textContent='멈춤 — 시작을 누르면 처음부터 다시 세요'; $('status').className='status idle'; }
+  $('btnStart').textContent=running?'멈춤':'시작'; $('btnStart').classList.toggle('warn',running); $('btnStart').classList.toggle('primary',!running); };
+$('btnReset').onclick=()=>{ det.reset(); lastCount=0; t0=performance.now(); $('count').innerHTML='0<small>회</small>'; $('devCount').value=''; diff(); $('status').textContent=running?'준비됐어요 — 뛰어 봐요!':'시작을 누르고 카메라 앞에 서요'; };
+$('sens').oninput=()=>{ const v=+$('sens').value; det.minAmp=v/100; $('sensV').textContent=v<=7?'예민 (살짝 떠도 셈)':v<=12?'보통':'둔감 (높이 떠야 셈)'; };
+$('btnFlip').onclick=async()=>{ facing=facing==='user'?'environment':'user'; try{ await openCam(); }catch(e){ log('카메라 전환 실패: '+e.message); } };
+$('btnBig').onclick=()=>{ $('pip').classList.toggle('big'); $('btnBig').textContent=$('pip').classList.contains('big')?'내 모습 작게':'내 모습 크게'; };
+$('pip').onclick=()=>$('btnBig').onclick();
+$('devCount').oninput=diff;
+document.addEventListener('keydown',e=>{ if(e.code==='Space'){ e.preventDefault(); $('btnStart').click(); } if(e.key==='r'||e.key==='R') $('btnReset').click(); });
+</script>
+</body>
+</html>

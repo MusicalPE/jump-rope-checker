@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>줄넘기 판정기 v0.7 · 카메라로 진짜 뛰는지 보기</title>
+<title>줄넘기 판정기 v0.7.1 · 카메라로 진짜 뛰는지 보기</title>
 <style>
   :root{
     --ground:#000; --panel:#14161C; --panel2:#1B1E26; --line:#2C3140; --ink:#F2F3F7; --muted:#9097A8;
@@ -78,8 +78,8 @@
 <body>
 <div class="screen">
   <header>
-    <h1>줄넘기 판정기 <span class="sub">v0.7 시제품</span></h1>
-    <span class="sub">엉덩이와 머리가 같이 뜨고 팔이 돌아갈 때만 1회 · 앉아서 팔만 돌리거나 줄 없이 콩콩 뛰면 세지 않아요</span>
+    <h1>줄넘기 판정기 <span class="sub">v0.7.1 시제품</span></h1>
+    <span class="sub">머리부터 발까지 보이게 서서 몸 전체가 뜨고 팔이 돌아갈 때만 1회 · 앉아서 팔만 돌리거나 줄 없이 콩콩 뛰면 세지 않아요</span>
     <div class="who" id="who"></div>
     <div class="spacer"></div>
     <button id="btnBig" title="내 모습 크게/작게">내 모습 크게</button>
@@ -89,12 +89,12 @@
     <div class="count" id="count">0<small>회</small></div>
     <div class="status idle" id="status">시작을 누르고 카메라 앞에 서요</div>
     <div class="meter"><i id="meter"></i><b id="meterLine"></b></div>
-    <div class="meter-l"><span>몸(엉덩이)이 뜬 높이</span><span>│ 선을 넘었다 내려오면 1회</span></div>
+    <div class="meter-l"><span>몸이 뜬 높이</span><span>│ 선을 넘었다 내려오면 1회</span></div>
     <div class="compare">
       <span>전자 줄넘기 화면 숫자</span><input type="number" id="devCount" min="0" placeholder="0">
       <span class="diff" id="diff">—</span>
     </div>
-    <div class="stats"><span>시간 <b id="time">0:00</b></span><span>분당 <b id="rate">0</b>회</span><span>손만 돌린 시간 <b id="handSec">0</b>초</span><span>최고 연속 <b id="streak">0</b>회</span><span title="몸은 떴지만 팔이 안 돌아간 경우">줄 안 돌리고 뛴 <b id="norope">0</b>회</span><span title="머리나 엉덩이 한쪽만 움직인 경우">몸 일부만 <b id="rej">0</b>회</span></div>
+    <div class="stats"><span>시간 <b id="time">0:00</b></span><span>분당 <b id="rate">0</b>회</span><span>손만 돌린 시간 <b id="handSec">0</b>초</span><span>최고 연속 <b id="streak">0</b>회</span><span title="몸은 떴지만 팔이 안 돌아간 경우">줄 안 돌리고 뛴 <b id="norope">0</b>회</span><span title="머리나 허리 한쪽만 움직인 경우">몸 일부만 <b id="rej">0</b>회</span></div>
   </main>
   <footer>
     <button class="primary" id="btnStart">시작</button>
@@ -125,7 +125,7 @@
   <ol>
     <li>기기를 세워 두고 <b>2~3m</b> 떨어져서 <b>머리부터 발까지</b> 다 화면에 들어오게 서요. 발이 안 보이거나 너무 가까우면 세지 않아요. 옆 친구는 화면 밖으로.</li>
     <li>처음 1초 정도 가만히 서 있으면 기준 높이를 잡아요.</li>
-    <li><b>머리부터 발까지 다 보이는 상태에서 엉덩이·머리·발이 같이 뜨고, 팔이 돌아갈 때</b>만 1회예요. 너무 가까이 서거나 앉으면 세지 않아요. 앉아서 팔만 돌리면 <b style="color:var(--orange)">"팔만 돌리고 있어요"</b>, 줄 없이 콩콩만 뛰면 <b style="color:var(--orange)">"줄을 돌리지 않았어요"</b>가 뜨고 세지 않아요.</li>
+    <li><b>머리부터 발까지 다 보이는 상태에서 몸 전체(머리·허리·발)가 같이 뜨고, 팔이 돌아갈 때</b>만 1회예요. 너무 가까이 서거나 앉으면 세지 않아요. 앉아서 팔만 돌리면 <b style="color:var(--orange)">"팔만 돌리고 있어요"</b>, 줄 없이 콩콩만 뛰면 <b style="color:var(--orange)">"줄을 돌리지 않았어요"</b>가 뜨고 세지 않아요.</li>
   </ol>
   <p style="font-size:13px">처음 열 때는 인터넷이 필요해요(관절 인식 모델 약 6MB를 받아요). 한 번 받은 뒤에는 브라우저가 기억해요.<br>체육교사 보조 프로그램이나 줄넘기 기록 관리 프로그램의 "카메라로 뛰기"로 열었다면 끝낼 때 뛴 횟수가 앱에 바로 기록돼요.</p>
   <div class="err" id="coverErr"></div>
@@ -219,7 +219,7 @@ const $=id=>document.getElementById(id);
 const video=$('video'), cv=$('overlay'), cx=cv.getContext('2d');
 let landmarker=null, stream=null, facing='user', running=false, t0=0, raf=0, lastVideoT=-1, frames=0, fpsT=0;
 /* ---------- 앱 연동: 체육교사 보조 프로그램의 줄넘기 화면에서 열리면 ?app=앱주소&t=학생표&kind=종류 가 붙어 와요 ---------- */
-const VER='0.7';
+const VER='0.7.1';
 const Q=new URLSearchParams(location.search);
 const LINK={ app:Q.get('app')||'', t:Q.get('t')||'', kind:Q.get('kind')||'', sens:+(Q.get('sens')||0)||0, target:(Q.get('target')==='fit'?'fit':'rope'), who:null, saved:null,
   // mode=post : 오프라인판(파일로 여는 프로그램)이 연 창. 서버 대신 window.opener.postMessage 로 결과를 돌려준다.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>줄넘기 판정기 v0.3 · 카메라로 진짜 뛰는지 보기</title>
+<title>줄넘기 판정기 v0.4 · 카메라로 진짜 뛰는지 보기</title>
 <style>
   :root{
     --ground:#000; --panel:#14161C; --panel2:#1B1E26; --line:#2C3140; --ink:#F2F3F7; --muted:#9097A8;
@@ -58,14 +58,25 @@
   .cover.hide{display:none}
   .flash{animation:flash .25s}
   @keyframes flash{0%{transform:scale(1.12)}100%{transform:scale(1)}}
+  .who{display:none;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:6px 14px;font-weight:800;font-size:14px}
+  .who.on{display:flex} .who b{color:var(--yellow)} .who small{color:var(--muted);font-weight:600}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center;padding:24px;z-index:20}
+  .modal.on{display:flex}
+  .modal .box{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:24px 26px;max-width:520px;width:100%;display:flex;flex-direction:column;gap:14px;text-align:center}
+  .modal h3{font-family:var(--display);font-weight:400;font-size:clamp(26px,5vh,44px);margin:0}
+  .modal .big{font-family:var(--display);font-size:clamp(56px,14vh,120px);line-height:1;color:var(--green)}
+  .modal p{margin:0;color:var(--muted);line-height:1.6}
+  .modal .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .modal .err{color:var(--red);font-weight:700}
   .log{position:fixed;left:16px;bottom:max(14px,env(safe-area-inset-bottom));font-size:12px;color:var(--muted);max-width:40vw;line-height:1.5}
 </style>
 </head>
 <body>
 <div class="screen">
   <header>
-    <h1>줄넘기 판정기 <span class="sub">v0.3 시제품</span></h1>
+    <h1>줄넘기 판정기 <span class="sub">v0.4 시제품</span></h1>
     <span class="sub">엉덩이와 머리가 같이 뜨고 팔이 돌아갈 때만 1회 · 앉아서 팔만 돌리거나 줄 없이 콩콩 뛰면 세지 않아요</span>
+    <div class="who" id="who"></div>
     <div class="spacer"></div>
     <button id="btnBig" title="내 모습 크게/작게">내 모습 크게</button>
     <button id="btnFlip" title="앞/뒤 카메라">카메라 전환</button>
@@ -95,6 +106,13 @@
   <div class="nocam" id="nocam">카메라를 켜면 여기에 내 모습이 나와요</div>
 </div>
 <div class="log" id="log"></div>
+<div class="modal" id="saveModal"><div class="box">
+  <h3 id="smTitle">기록할까요?</h3>
+  <div class="big" id="smCount">0<small style="font-size:.3em;color:var(--muted)"> 회</small></div>
+  <p id="smNote"></p>
+  <div class="err" id="smErr"></div>
+  <div class="row" id="smBtns"><button class="primary" id="smSave" style="font-size:18px;padding:12px 24px">기록하기</button><button id="smAgain">다시 뛰기</button></div>
+</div></div>
 
 <div class="cover" id="cover">
   <h2>줄넘기 판정기</h2>
@@ -104,7 +122,7 @@
     <li>처음 1초 정도 가만히 서 있으면 기준 높이를 잡아요.</li>
     <li><b>엉덩이와 머리가 같이 뜨고, 팔이 돌아갈 때</b>만 1회예요. 앉아서 팔만 돌리면 <b style="color:var(--orange)">"팔만 돌리고 있어요"</b>, 줄 없이 콩콩만 뛰면 <b style="color:var(--orange)">"줄을 돌리지 않았어요"</b>가 뜨고 세지 않아요.</li>
   </ol>
-  <p style="font-size:13px">처음 열 때는 인터넷이 필요해요(관절 인식 모델 약 6MB를 받아요). 한 번 받은 뒤에는 브라우저가 기억해요.</p>
+  <p style="font-size:13px">처음 열 때는 인터넷이 필요해요(관절 인식 모델 약 6MB를 받아요). 한 번 받은 뒤에는 브라우저가 기억해요.<br>체육교사 보조 프로그램의 "카메라로 뛰기"로 열었다면 끝낼 때 뛴 횟수가 앱에 바로 기록돼요.</p>
   <div class="err" id="coverErr"></div>
   <button class="primary" id="btnCam" style="font-size:20px;padding:14px 28px">카메라 켜고 시작하기</button>
 </div>
@@ -191,6 +209,45 @@ if(typeof module!=='undefined') module.exports={JumpDetector};
 const $=id=>document.getElementById(id);
 const video=$('video'), cv=$('overlay'), cx=cv.getContext('2d');
 let landmarker=null, stream=null, facing='user', running=false, t0=0, raf=0, lastVideoT=-1, frames=0, fpsT=0;
+/* ---------- 앱 연동: 체육교사 보조 프로그램의 줄넘기 화면에서 열리면 ?app=앱주소&t=학생표&kind=종류 가 붙어 와요 ---------- */
+const VER='0.4';
+const Q=new URLSearchParams(location.search);
+const LINK={ app:Q.get('app')||'', t:Q.get('t')||'', kind:Q.get('kind')||'', who:null, saved:null };
+async function appApi(name, params){
+  const u=new URL(LINK.app); u.searchParams.set('api',name); u.searchParams.set('t',LINK.t);
+  Object.entries(params||{}).forEach(([k,v])=>u.searchParams.set(k,v));
+  const r=await fetch(u.toString(),{redirect:'follow'});
+  const j=await r.json(); if(!j.ok) throw new Error(j.error||'앱이 거절했어요'); return j.data;
+}
+async function linkInit(){
+  if(!LINK.app||!LINK.t) return;
+  const w=$('who'); w.classList.add('on'); w.innerHTML='앱과 연결하는 중…';
+  try{ const d=await appApi('rope_x_who'); LINK.who=d;
+    w.innerHTML=`<b>${d.학년}학년 ${d.반}반 ${d.번호}번 ${d.이름}</b><small>오늘 ${d.오늘}회 / 목표 ${d.하루목표}회${LINK.kind?' · '+LINK.kind:''}</small>`;
+    $('btnStart').textContent='시작'; }
+  catch(e){ w.innerHTML=`<span style="color:var(--red)">앱 연결 실패: ${e.message}</span><small>세어 보기만 돼요 (앱에서 다시 열어 주세요)</small>`; LINK.app=''; }
+}
+function fmtSec(t){ return Math.floor(t/60)+'분 '+Math.floor(t%60)+'초'; }
+function openSaveModal(){
+  const st=det.state(), sec=Math.round((performance.now()-t0)/1000);
+  $('smCount').innerHTML=st.count+'<small style="font-size:.3em;color:var(--muted)"> 회</small>';
+  $('smTitle').textContent='이만큼 기록할까요?'; $('smErr').textContent='';
+  $('smNote').textContent=`${LINK.who?LINK.who.이름+' · ':''}${fmtSec(sec)}`+(st.handSec>=2?` · 팔만 돌린 ${Math.round(st.handSec)}초는 빠졌어요`:'')+(st.noRope?` · 줄 없이 뛴 ${st.noRope}회는 빠졌어요`:'');
+  $('smBtns').innerHTML='<button class="primary" id="smSave" style="font-size:18px;padding:12px 24px">기록하기</button><button id="smAgain">다시 뛰기</button>';
+  $('smSave').onclick=()=>sendResult(st.count,sec,st); $('smAgain').onclick=()=>{ $('saveModal').classList.remove('on'); $('btnReset').click(); };
+  if(LINK.who && st.count<LINK.who.최소){ $('smErr').textContent=`${LINK.who.최소}회 이상일 때만 기록할 수 있어요. 조금 더 뛰어 봐요!`; $('smSave').disabled=true; }
+  $('saveModal').classList.add('on');
+}
+async function sendResult(count,sec,st){
+  const b=$('smSave'); b.disabled=true; b.textContent='보내는 중…'; $('smErr').textContent='';
+  try{ const d=await appApi('rope_x_save',{count,sec,hand:Math.round(st.handSec),norope:st.noRope,kind:LINK.kind,ver:VER});
+    LINK.saved=d; $('smTitle').textContent='기록했어요!'; $('smNote').textContent=`오늘 합계 ${d.오늘}회 / 목표 ${d.하루목표}회`+(d.달성?' — 오늘 목표 달성! 🎉':'');
+    $('smBtns').innerHTML='<button class="primary" id="smMore" style="font-size:18px;padding:12px 24px">한 번 더 뛰기</button><button id="smClose">창 닫기</button>';
+    $('smMore').onclick=()=>{ $('saveModal').classList.remove('on'); $('btnReset').click(); if(LINK.who){ LINK.who.오늘=d.오늘; $('who').querySelector('small').textContent=`오늘 ${d.오늘}회 / 목표 ${d.하루목표}회${LINK.kind?' · '+LINK.kind:''}`; } };
+    $('smClose').onclick=()=>{ window.close(); setTimeout(()=>{ $('smNote').textContent+=' — 이 창을 닫고 앱으로 돌아가 새로고침하면 기록이 보여요.'; },300); };
+    beep(880,0.1,0.2); setTimeout(()=>beep(1175,0.15,0.2),120);
+  }catch(e){ $('smErr').textContent='기록하지 못했어요: '+e.message+' — 인터넷을 확인하고 다시 눌러 보세요. 계속 안 되면 이 숫자를 앱에 직접 넣어 주세요.'; b.disabled=false; b.textContent='다시 보내기'; }
+}
 const det=new JumpDetector({minAmp:0.10});
 let ac=null;
 function beep(f,d,vol){ if(!$('snd').checked) return; try{ ac=ac||new (window.AudioContext||window.webkitAudioContext)(); const o=ac.createOscillator(), g=ac.createGain(); o.type='triangle'; o.frequency.value=f; g.gain.setValueAtTime(vol||0.2,ac.currentTime); g.gain.exponentialRampToValueAtTime(0.0001,ac.currentTime+d); o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime+d); }catch(e){} }
@@ -272,11 +329,11 @@ function diff(){
 }
 /* ---------- 버튼 ---------- */
 $('btnCam').onclick=async()=>{
-  try{ await loadModel(); $('btnCam').textContent='카메라 켜는 중…'; await openCam(); $('cover').classList.add('hide'); t0=performance.now(); loop(); }
+  try{ await loadModel(); $('btnCam').textContent='카메라 켜는 중…'; await openCam(); $('cover').classList.add('hide'); t0=performance.now(); loop(); linkInit(); }
   catch(e){ console.error(e); $('coverErr').textContent='시작하지 못했어요: '+(e.message||e)+(location.protocol==='file:'?' — 파일로 열었을 때 카메라가 막히면 크롬에서 열거나, 인터넷에 올린 주소로 열어 보세요.':''); $('btnCam').disabled=false; $('btnCam').textContent='다시 시도'; }
 };
-$('btnStart').onclick=()=>{ running=!running; if(running){ t0=performance.now(); det.reset(); lastCount=0; $('count').innerHTML='0<small>회</small>'; beep(660,0.1,0.2); } else { beep(440,0.15,0.2); $('status').textContent='멈춤 — 시작을 누르면 처음부터 다시 세요'; $('status').className='status idle'; }
-  $('btnStart').textContent=running?'멈춤':'시작'; $('btnStart').classList.toggle('warn',running); $('btnStart').classList.toggle('primary',!running); };
+$('btnStart').onclick=()=>{ running=!running; if(running){ t0=performance.now(); det.reset(); lastCount=0; $('count').innerHTML='0<small>회</small>'; beep(660,0.1,0.2); } else { beep(440,0.15,0.2); $('status').textContent='멈춤 — 시작을 누르면 처음부터 다시 세요'; $('status').className='status idle'; if(LINK.app) openSaveModal(); }
+  $('btnStart').textContent=running?(LINK.app?'끝내고 기록하기':'멈춤'):'시작'; $('btnStart').classList.toggle('warn',running); $('btnStart').classList.toggle('primary',!running); };
 $('btnReset').onclick=()=>{ det.reset(); lastCount=0; t0=performance.now(); $('count').innerHTML='0<small>회</small>'; $('devCount').value=''; diff(); $('status').textContent=running?'준비됐어요 — 뛰어 봐요!':'시작을 누르고 카메라 앞에 서요'; };
 $('sens').oninput=()=>{ const v=+$('sens').value; det.minAmp=v/100; $('sensV').textContent=v<=7?'예민 (살짝 떠도 셈)':v<=12?'보통':'둔감 (높이 떠야 셈)'; };
 $('btnFlip').onclick=async()=>{ facing=facing==='user'?'environment':'user'; try{ await openCam(); }catch(e){ log('카메라 전환 실패: '+e.message); } };

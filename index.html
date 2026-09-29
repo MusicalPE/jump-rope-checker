@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>줄넘기 판정기 v0.4 · 카메라로 진짜 뛰는지 보기</title>
+<title>줄넘기 판정기 v0.5 · 카메라로 진짜 뛰는지 보기</title>
 <style>
   :root{
     --ground:#000; --panel:#14161C; --panel2:#1B1E26; --line:#2C3140; --ink:#F2F3F7; --muted:#9097A8;
@@ -74,7 +74,7 @@
 <body>
 <div class="screen">
   <header>
-    <h1>줄넘기 판정기 <span class="sub">v0.4 시제품</span></h1>
+    <h1>줄넘기 판정기 <span class="sub">v0.5 시제품</span></h1>
     <span class="sub">엉덩이와 머리가 같이 뜨고 팔이 돌아갈 때만 1회 · 앉아서 팔만 돌리거나 줄 없이 콩콩 뛰면 세지 않아요</span>
     <div class="who" id="who"></div>
     <div class="spacer"></div>
@@ -120,7 +120,7 @@
   <ol>
     <li>기기를 세워 두고 <b>2~3m</b> 떨어져서 <b>머리부터 엉덩이까지</b>는 꼭 화면에 들어오게 서요(엉덩이가 안 보이면 머리로만 세서 덜 정확해요). 옆 친구는 화면 밖으로.</li>
     <li>처음 1초 정도 가만히 서 있으면 기준 높이를 잡아요.</li>
-    <li><b>엉덩이와 머리가 같이 뜨고, 팔이 돌아갈 때</b>만 1회예요. 앉아서 팔만 돌리면 <b style="color:var(--orange)">"팔만 돌리고 있어요"</b>, 줄 없이 콩콩만 뛰면 <b style="color:var(--orange)">"줄을 돌리지 않았어요"</b>가 뜨고 세지 않아요.</li>
+    <li><b>머리부터 발까지 다 보이는 상태에서 엉덩이·머리·발이 같이 뜨고, 팔이 돌아갈 때</b>만 1회예요. 너무 가까이 서거나 앉으면 세지 않아요. 앉아서 팔만 돌리면 <b style="color:var(--orange)">"팔만 돌리고 있어요"</b>, 줄 없이 콩콩만 뛰면 <b style="color:var(--orange)">"줄을 돌리지 않았어요"</b>가 뜨고 세지 않아요.</li>
   </ol>
   <p style="font-size:13px">처음 열 때는 인터넷이 필요해요(관절 인식 모델 약 6MB를 받아요). 한 번 받은 뒤에는 브라우저가 기억해요.<br>체육교사 보조 프로그램의 "카메라로 뛰기"로 열었다면 끝낼 때 뛴 횟수가 앱에 바로 기록돼요.</p>
   <div class="err" id="coverErr"></div>
@@ -143,6 +143,7 @@ JumpDetector.prototype.reset=function(){
   this.head={s:null,base:null}; this.hip={s:null,base:null}; this.scale=null; this.n=0;
   this.handSpeed=0; this.prevW=null; this.prevT=null; this.hand=false; this.handSec=0; this.lastArmT=-9;
   this.streak=0; this.best=0; this.visible=false; this.rateBuf=[]; this.noRope=0; this.partial=0; this.why='';
+  this.ank={s:null,base:null}; this.ankPeak=0; this.full=false; this.tooClose=false;
 };
 // 한 채널(머리·엉덩이)의 높이를 부드럽게 하고 기준선(땅에 있을 때 높이) 대비 얼마나 떴는지
 JumpDetector.prototype.track=function(ch, y){
@@ -153,9 +154,9 @@ JumpDetector.prototype.track=function(ch, y){
 };
 JumpDetector.prototype.push=function(t, lm){
   const v=i=>lm[i]&&(lm[i].visibility===undefined||lm[i].visibility>0.35);
-  const headOk=v(0)||(v(7)&&v(8)), shOk=v(11)&&v(12), hipOk=v(23)&&v(24);
-  if(!(headOk&&shOk)){ this.visible=false; this.prevW=null; this.prevT=t; return this.state(); }
-  this.visible=true; this.hipSeen=hipOk; this.n++;
+  const headOk=v(0)||(v(7)&&v(8)), shOk=v(11)&&v(12), hipOk=v(23)&&v(24), ankOk=v(27)&&v(28);
+  if(!(headOk&&shOk)){ this.visible=false; this.full=false; this.prevW=null; this.prevT=t; return this.state(); }
+  this.visible=true; this.hipSeen=hipOk; this.full=hipOk&&ankOk; this.n++;
   const sh={x:(lm[11].x+lm[12].x)/2,y:(lm[11].y+lm[12].y)/2};
   // 크기 기준: 몸통(어깨~엉덩이) 길이. 팔을 돌리면 어깨가 들썩여 값이 흔들리므로 천천히 평균 낸 값을 씀
   let raw;
@@ -164,12 +165,14 @@ JumpDetector.prototype.push=function(t, lm){
   raw=Math.max(0.02,raw);
   this.scale=this.scale===null?raw:this.scale+(raw-this.scale)*(this.n<30?0.2:0.02);
   const scale=this.scale;
+  this.tooClose=hipOk && scale>0.42;   // 몸통이 화면 높이의 40% 넘게 크면 너무 가까움 (앉아서 상체만 보이는 경우)
   const headY=(v(0)?lm[0].y:(lm[7].y+lm[8].y)/2)/scale;
   const dt=this.prevT===null?0.033:Math.max(0.001,Math.min(0.2,t-this.prevT));
   const headLift=this.track(this.head, headY);
   const hipLift=hipOk?this.track(this.hip,(lm[23].y+lm[24].y)/2/scale):0;
-  // 주 신호: 엉덩이(앉거나 팔만 돌리면 안 뜸). 엉덩이가 안 보일 때만 머리로 대신하되 문턱을 높임
-  const lift=hipOk?hipLift:headLift, amp=hipOk?this.minAmp:this.minAmp*1.4;
+  const ankLift=ankOk?this.track(this.ank,(lm[27].y+lm[28].y)/2/scale):0;
+  // 주 신호: 엉덩이. 머리부터 발까지 다 보일 때만 셉니다 (상체만 보이면 앉아서 들썩여도 점프처럼 보여요)
+  const lift=hipOk?hipLift:headLift, amp=this.minAmp;
   this.lift=lift; this.hipLift=hipLift;
   // 손목 속도 (어깨 기준 상대 위치, 몸통 길이/초) — 줄을 돌리고 있는지
   if(v(15)&&v(16)){
@@ -179,14 +182,15 @@ JumpDetector.prototype.push=function(t, lm){
   } else { this.prevW=null; this.handSpeed*=0.9; }
   if(this.handSpeed>0.8) this.lastArmT=t;
   const armOn=(t-this.lastArmT)<0.7;
-  if(!this.air){ if(lift>amp){ this.air=true; this.airT=t; this.hipPeak=hipLift; this.headPeak=headLift; } }
-  else { this.hipPeak=Math.max(this.hipPeak,hipLift); this.headPeak=Math.max(this.headPeak,headLift);
-    if(lift<amp*0.5){ this.air=false;
+  const countable=this.full && !this.tooClose;
+  if(!this.air){ if(lift>amp && countable){ this.air=true; this.airT=t; this.hipPeak=hipLift; this.headPeak=headLift; this.ankPeak=ankLift; } }
+  else { this.hipPeak=Math.max(this.hipPeak,hipLift); this.headPeak=Math.max(this.headPeak,headLift); this.ankPeak=Math.max(this.ankPeak,ankLift);
+    if(lift<amp*0.5 || !countable){ this.air=false;
       const airTime=t-this.airT;
-      // 진짜 줄넘기 = 엉덩이도 머리도 같이 떴고(몸 전체) + 팔이 돌고 있고 + 떠 있던 시간이 점프답게 짧음
-      const bodyOk=hipOk ? (this.hipPeak>amp && this.headPeak>amp*0.6) : this.headPeak>amp;
+      // 진짜 줄넘기 = 엉덩이·머리·발목이 다 같이 떴고(몸 전체가 공중에) + 팔이 돌고 있고 + 떠 있던 시간이 점프답게 짧음
+      const bodyOk=this.hipPeak>amp && this.headPeak>amp*0.6 && this.ankPeak>amp*0.7;
       const timeOk=airTime>=0.06 && airTime<=0.9;
-      if(t-this.lastJump>this.minGap && timeOk){
+      if(countable && t-this.lastJump>this.minGap && timeOk){
         if(bodyOk && armOn){ this.count++; this.lastJump=t; this.streak++; this.best=Math.max(this.best,this.streak); this.rateBuf.push(t); this.why=''; }
         else if(bodyOk && !armOn){ this.noRope++; this.why='norope'; }
         else { this.partial++; this.why='partial'; } } } }
@@ -200,7 +204,7 @@ JumpDetector.prototype.push=function(t, lm){
 };
 JumpDetector.prototype.state=function(){
   return { count:this.count, air:this.air, lift:this.lift, hipLift:this.hipLift, hand:this.hand, handSec:this.handSec, visible:this.visible, hipSeen:this.hipSeen,
-           streak:this.streak, best:this.best, rate:this.rateBuf.length*6, noRope:this.noRope, partial:this.partial, why:this.why, lastJump:this.lastJump, amp:this.hipSeen?this.minAmp:this.minAmp*1.4 };
+           streak:this.streak, best:this.best, rate:this.rateBuf.length*6, noRope:this.noRope, partial:this.partial, why:this.why, lastJump:this.lastJump, amp:this.minAmp, full:this.full, tooClose:this.tooClose };
 };
 if(typeof module!=='undefined') module.exports={JumpDetector};
 </script>
@@ -210,9 +214,9 @@ const $=id=>document.getElementById(id);
 const video=$('video'), cv=$('overlay'), cx=cv.getContext('2d');
 let landmarker=null, stream=null, facing='user', running=false, t0=0, raf=0, lastVideoT=-1, frames=0, fpsT=0;
 /* ---------- 앱 연동: 체육교사 보조 프로그램의 줄넘기 화면에서 열리면 ?app=앱주소&t=학생표&kind=종류 가 붙어 와요 ---------- */
-const VER='0.4';
+const VER='0.5';
 const Q=new URLSearchParams(location.search);
-const LINK={ app:Q.get('app')||'', t:Q.get('t')||'', kind:Q.get('kind')||'', who:null, saved:null };
+const LINK={ app:Q.get('app')||'', t:Q.get('t')||'', kind:Q.get('kind')||'', sens:+(Q.get('sens')||0)||0, who:null, saved:null };
 async function appApi(name, params){
   const u=new URL(LINK.app); u.searchParams.set('api',name); u.searchParams.set('t',LINK.t);
   Object.entries(params||{}).forEach(([k,v])=>u.searchParams.set(k,v));
@@ -222,6 +226,8 @@ async function appApi(name, params){
 async function linkInit(){
   if(!LINK.app||!LINK.t) return;
   const w=$('who'); w.classList.add('on'); w.innerHTML='앱과 연결하는 중…';
+  // 민감도는 선생님이 앱 설정에서 정한 값으로 고정 (학생이 못 바꿈)
+  const sv=Math.max(6,Math.min(16,LINK.sens||10)); det.minAmp=sv/100; $('sens').value=sv; $('sens').dispatchEvent(new Event('input')); $('sens').closest('label').hidden=true;
   try{ const d=await appApi('rope_x_who'); LINK.who=d;
     w.innerHTML=`<b>${d.학년}학년 ${d.반}반 ${d.번호}번 ${d.이름}</b><small>오늘 ${d.오늘}회 / 목표 ${d.하루목표}회${LINK.kind?' · '+LINK.kind:''}</small>`;
     $('btnStart').textContent='시작'; }
@@ -308,9 +314,10 @@ function paint(st,t,seen){
   if(st.air&&!lastAir){ $('count').style.color='var(--green)'; } else if(!st.air&&lastAir){ $('count').style.color=''; } lastAir=st.air;
   const s=$('status');
   if(!seen||!st.visible){ s.textContent='머리와 어깨가 보이게 서 주세요'; s.className='status wait'; }
+  else if(st.tooClose){ s.textContent='너무 가까워요 — 발까지 보이게 뒤로 물러서요'; s.className='status wait'; }
+  else if(!st.full){ s.textContent='머리부터 발까지 다 보이게 서 주세요'; s.className='status wait'; }
   else if(st.hand){ s.textContent='팔만 돌리고 있어요! 몸도 같이 뛰어요'; s.className='status hand'; }
   else if(st.why==='norope'&&t-det.airT<1.5){ s.textContent='줄을 돌리지 않았어요! 팔도 같이 돌려요'; s.className='status hand'; }
-  else if(st.hipSeen===false&&st.count===0&&t>3&&!st.air){ s.textContent='엉덩이까지 보이게 조금 물러서요'; s.className='status wait'; }
   else if(st.air||t-det.lastJump<0.6){ s.textContent='뛰고 있어요!'; s.className='status jump'; }
   else if(st.count===0){ s.textContent='준비됐어요 — 뛰어 봐요!'; s.className='status idle'; }
   else { s.textContent='멈췄어요'; s.className='status idle'; }

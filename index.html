@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>줄넘기 판정기 v0.7.1 · 카메라로 진짜 뛰는지 보기</title>
+<title>줄넘기 판정기 v0.7.2 · 카메라로 진짜 뛰는지 보기</title>
 <style>
   :root{
     --ground:#000; --panel:#14161C; --panel2:#1B1E26; --line:#2C3140; --ink:#F2F3F7; --muted:#9097A8;
@@ -73,12 +73,41 @@
   .madeby b{color:var(--ink);font-weight:800}
   .madeby svg{width:14px;height:14px;stroke:var(--yellow);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .log{bottom:calc(max(14px,env(safe-area-inset-bottom)) + 38px)}
+  /* ---------- 세로 핸드폰 (v0.7.2) — 글자가 겹치고 시작 버튼이 가려지던 것: 위에서 아래로 흐르게, 내 모습은 가운데, 시작 버튼은 아래에 붙음 ---------- */
+  @media (max-width:700px) and (orientation:portrait){
+    body{overflow-y:auto}
+    .screen{position:relative;inset:auto;min-height:100%;padding:10px 12px 0}
+    header{gap:8px}
+    header h1{font-size:21px}
+    header .sub,header .spacer{display:none}
+    header button{padding:8px 12px;font-size:14px}
+    .who{flex-wrap:wrap;gap:2px 8px;border-radius:14px;font-size:13px}
+    main{justify-content:flex-start;gap:10px;padding:6px 0 14px}
+    .count{font-size:min(22vh,32vw)}
+    .status{font-size:min(4vh,6.2vw);max-width:94vw;min-height:2.3em}
+    .meter{width:92vw}
+    .meter-l{font-size:11.5px;gap:8px}
+    .compare{padding:8px 12px;gap:8px;font-size:13.5px}
+    .compare input{width:84px;font-size:18px;padding:6px}
+    .compare .diff{font-size:18px}
+    .stats{gap:6px 12px;font-size:12px}
+    .stats b{font-size:15px}
+    .pip.inflow{position:relative;right:auto;bottom:auto;width:min(42vw,200px);margin:2px auto;box-shadow:none;flex:none}
+    .pip.inflow.big{width:92vw;transform:none;right:auto;bottom:auto}
+    footer{position:sticky;bottom:0;z-index:12;background:var(--ground);gap:8px;padding:8px 0 max(10px,env(safe-area-inset-bottom));border-top:1px solid var(--line);margin:0 -12px;padding-left:12px;padding-right:12px}
+    footer #btnStart{flex:1 1 100%;font-size:20px;padding:13px}
+    footer #btnReset{padding:8px 12px;font-size:14px}
+    footer label{font-size:12px}
+    footer input[type=range]{width:110px}
+    .madeby{position:static;margin:14px auto 18px;width:max-content}
+    .log{display:none}
+  }
 </style>
 </head>
 <body>
 <div class="screen">
   <header>
-    <h1>줄넘기 판정기 <span class="sub">v0.7.1 시제품</span></h1>
+    <h1>줄넘기 판정기 <span class="sub">v0.7.2 시제품</span></h1>
     <span class="sub">머리부터 발까지 보이게 서서 몸 전체가 뜨고 팔이 돌아갈 때만 1회 · 앉아서 팔만 돌리거나 줄 없이 콩콩 뛰면 세지 않아요</span>
     <div class="who" id="who"></div>
     <div class="spacer"></div>
@@ -219,7 +248,7 @@ const $=id=>document.getElementById(id);
 const video=$('video'), cv=$('overlay'), cx=cv.getContext('2d');
 let landmarker=null, stream=null, facing='user', running=false, t0=0, raf=0, lastVideoT=-1, frames=0, fpsT=0;
 /* ---------- 앱 연동: 체육교사 보조 프로그램의 줄넘기 화면에서 열리면 ?app=앱주소&t=학생표&kind=종류 가 붙어 와요 ---------- */
-const VER='0.7.1';
+const VER='0.7.2';
 const Q=new URLSearchParams(location.search);
 const LINK={ app:Q.get('app')||'', t:Q.get('t')||'', kind:Q.get('kind')||'', sens:+(Q.get('sens')||0)||0, target:(Q.get('target')==='fit'?'fit':'rope'), who:null, saved:null,
   // mode=post : 오프라인판(파일로 여는 프로그램)이 연 창. 서버 대신 window.opener.postMessage 로 결과를 돌려준다.
@@ -380,6 +409,13 @@ $('sens').oninput=()=>{ const v=+$('sens').value; det.minAmp=v/100; $('sensV').t
 $('btnFlip').onclick=async()=>{ facing=facing==='user'?'environment':'user'; try{ await openCam(); }catch(e){ log('카메라 전환 실패: '+e.message); } };
 $('btnBig').onclick=()=>{ $('pip').classList.toggle('big'); $('btnBig').textContent=$('pip').classList.contains('big')?'내 모습 작게':'내 모습 크게'; };
 $('pip').onclick=()=>$('btnBig').onclick();
+/* 세로 핸드폰: 내 모습을 화면 가운데(숫자 아래) 흐름 안으로, 넓은 화면에선 원래 자리(오른쪽 아래)로 */
+const PORTRAIT=matchMedia('(max-width:700px) and (orientation:portrait)');
+function placePip(){ const pip=$('pip'), main=document.querySelector('main');
+  if(PORTRAIT.matches){ if(pip.parentNode!==main){ main.insertBefore(pip, main.querySelector('.compare')); } pip.classList.add('inflow'); }
+  else { if(pip.parentNode===main){ document.body.insertBefore(pip, $('log')); } pip.classList.remove('inflow'); } }
+window.__placePip=placePip;
+placePip(); (PORTRAIT.addEventListener?PORTRAIT.addEventListener('change',placePip):PORTRAIT.addListener(placePip));
 $('devCount').oninput=diff;
 document.addEventListener('keydown',e=>{ if(e.code==='Space'){ e.preventDefault(); $('btnStart').click(); } if(e.key==='r'||e.key==='R') $('btnReset').click(); });
 </script>

@@ -167,13 +167,17 @@
     .who{order:5;flex:1 1 100%;flex-wrap:wrap;gap:2px 8px;border-radius:14px;font-size:13px;padding:6px 12px}
     .hbtn{font-size:13px;padding:7px 11px;min-height:38px}
     #btnFull{display:none}
-    .stage{display:flex;flex-direction:column;gap:10px}
-    .main{padding:16px 14px;gap:12px}
-    .count{font-size:min(20vh,30vw)}
-    .status{font-size:min(3.8vh,5.6vw)}
-    .compare{gap:8px;font-size:14px} .compare input[type=number]{width:84px;font-size:20px} .compare .diff{font-size:16px}
-    .camSlot{order:0;height:auto;justify-content:center}
-    .pip{height:auto;width:min(46vw,34vh);max-width:none;border-width:6px}
+    /* 세로 화면: 내 모습(왼쪽)과 횟수(오른쪽)를 한 줄에 — 뛰는 모습을 보며 숫자를 같이 봄 */
+    .stage{flex:none;margin:auto 0;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto;gap:8px;align-items:stretch}
+    .camSlot{order:-1;height:auto;justify-content:center;align-items:center}
+    .pip{height:auto;width:min(47vw,40vh);max-width:none;border-width:5px;border-radius:18px}
+    .pip .tag,.pip .fps{font-size:11px;padding:3px 8px}
+    .main{padding:12px 8px;gap:8px;justify-content:center}
+    .main .lab{font-size:12px}
+    .count{font-size:min(17vh,23vw)}
+    .status{font-size:min(2.6vh,3.9vw);padding:.5em .7em}
+    .meter-l{display:none}
+    .compare{flex-direction:column;gap:4px;font-size:12px;padding-top:8px} .compare input[type=number]{width:72px;font-size:18px;padding:4px} .compare .diff{font-size:14px}
     .pip.big{width:92vw;height:auto}
     .stats{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
     .stat{padding:8px 10px} .stat .v{font-size:22px}
@@ -186,6 +190,14 @@
     .madeby{order:9;margin-left:auto}
     .burst{font-size:40px}
     .coverBody{padding:24px 20px} .coverArt svg.hero{width:120px}
+  }
+  @media (min-width:600px) and (max-width:1100px) and (orientation:portrait){
+    .pip{width:min(58vw,62vh);border-width:7px;border-radius:22px}
+    .pip .tag,.pip .fps{font-size:13px;padding:4px 10px}
+    .main .lab{font-size:15px}
+    .count{font-size:min(15vh,19vw)}
+    .status{font-size:min(2.6vh,3.4vw)}
+    .compare{font-size:14px}
   }
 </style>
 </head>
